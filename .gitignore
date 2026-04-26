@@ -5,3 +5,4 @@ reports/
 logs/
 *.pyc
 __pycache__/
+.idea/
