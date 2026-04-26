@@ -1,10 +1,7 @@
-.env
-__pycache__/
-*.pyc
-history.json
-reports/
-.git
-.venv
 venv/
+.git/
+.env
+reports/
 logs/
-*.log
+*.pyc
+__pycache__/

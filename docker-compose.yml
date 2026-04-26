@@ -11,10 +11,6 @@ services:
       - ./reports:/app/reports
       - ./logs:/app/logs
       - ./data:/app/data
-
-    # ВАЖНО: Переопределяем CMD ["--help"] из Dockerfile на реальную команду сканирования.
-    # Например, запуск продвинутого сканирования по конкретному таргету:
-    command: ["--advanced", "--target", "https://web-production-f147.up.railway.app/webhook/aegis-scan"]
-
-    # Если у тебя есть флаг для режима демона, это будет выглядеть так:
-    # command: ["--daemon"]
+    # Если в .env DAEMON_MODE=true, можно оставить просто запуск:
+    command: ["--advanced"]
+    # Движок сам подтянет TARGET_URL из окружения
