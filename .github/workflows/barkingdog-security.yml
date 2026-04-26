@@ -1,0 +1,46 @@
+# .github/workflows/barkingdog-security.yml
+name: BarkingDog Security Audit
+
+on:
+  repository_dispatch:
+    types: [ bot_updated ] # Слушает сигнал (webhook) об обновлении основного бота
+  pull_request:
+    branches: [ main ]     # Запускается, если ты меняешь код самого сканера
+  schedule:
+    - cron: '0 3 * * *'    # Ночной дозор: автоматический запуск каждую ночь в 3:00
+  workflow_dispatch:       # Позволяет запускать пайплайн вручную кнопкой
+
+jobs:
+  security-scan:
+    runs-on: ubuntu-latestpip install detect-secrets
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run BarkingDog Scanner
+        env:
+          TARGET_URL: ${{ secrets.TARGET_URL }}
+          AEGIS_SECRET_TOKEN: ${{ secrets.AEGIS_SECRET_TOKEN }}
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          # Контекст для ИИ-судьи, чтобы избежать ложных срабатываний (Over-refusal)
+          BOT_DOMAIN: "Miami Auto Detailing services, booking, and pricing"
+        run: |
+          mkdir -p reports
+          
+          # Запуск сканера в Advanced-режиме
+          docker run --rm \
+            -v ${{ github.workspace }}/reports:/app/reports \
+            -e TARGET_URL=$TARGET_URL \
+            -e AEGIS_SECRET_TOKEN=$AEGIS_SECRET_TOKEN \
+            -e AI_API_KEY=$AI_API_KEY \
+            -e BOT_DOMAIN="$BOT_DOMAIN" \
+            -e ADVANCED_MODE=true \
+            barkingdog/scanner
+
+      - name: Upload Security Report (HTML)
+        if: always() # Загружать отчет всегда, даже если найдены уязвимости (скрипт выдал exit 1)
+        uses: actions/upload-artifact@v4
+        with:
+          name: barkingdog-report
+          path: reports/*.html
+          retention-days: 14

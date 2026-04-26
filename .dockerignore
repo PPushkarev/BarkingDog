@@ -1,0 +1,9 @@
+.env
+__pycache__/
+*.pyc
+history.json
+reports/
+.git
+.venv
+logs/
+*.log

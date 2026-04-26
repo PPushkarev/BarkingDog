@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  barkingdog:
+    build: .
+    container_name: barkingdog_scanner
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./reports:/app/reports
+      - ./logs:/app/logs
+      - ./data:/app/data
+
+    # ВАЖНО: Переопределяем CMD ["--help"] из Dockerfile на реальную команду сканирования.
+    # Например, запуск продвинутого сканирования по конкретному таргету:
+    command: ["--advanced", "--target", "https://web-production-f147.up.railway.app/webhook/aegis-scan"]
+
+    # Если у тебя есть флаг для режима демона, это будет выглядеть так:
+    # command: ["--daemon"]
