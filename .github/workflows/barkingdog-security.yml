@@ -34,8 +34,7 @@ jobs:
             -e AEGIS_SECRET_TOKEN=$AEGIS_SECRET_TOKEN \
             -e AI_API_KEY=$AI_API_KEY \
             -e BOT_DOMAIN="$BOT_DOMAIN" \
-            -e ADVANCED_MODE=true \
-            barkingdog/scanner
+            barkingdog/scanner --url $TARGET_URL
 
       - name: Upload Security Report (HTML)
         if: always()
