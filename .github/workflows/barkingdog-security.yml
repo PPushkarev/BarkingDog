@@ -24,6 +24,8 @@ jobs:
           TARGET_URL: ${{ secrets.TARGET_URL }}
           AEGIS_SECRET_TOKEN: ${{ secrets.AEGIS_SECRET_TOKEN }}
           AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           BOT_DOMAIN: "Miami Auto Detailing services, booking, and pricing"
         run: |
           mkdir -p reports
@@ -33,6 +35,8 @@ jobs:
             -e TARGET_URL=$TARGET_URL \
             -e AEGIS_SECRET_TOKEN=$AEGIS_SECRET_TOKEN \
             -e AI_API_KEY=$AI_API_KEY \
+            -e TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN \
+            -e TELEGRAM_CHAT_ID=$TELEGRAM_CHAT_ID \
             -e BOT_DOMAIN="$BOT_DOMAIN" \
             barkingdog/scanner --url $TARGET_URL
 
