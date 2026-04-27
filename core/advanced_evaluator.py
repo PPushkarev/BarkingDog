@@ -9,8 +9,8 @@ import json
 import logging
 import os
 
-from openai import AsyncOpenAI
-
+# from openai import AsyncOpenAI
+from core.llm.factory import get_cached_provider
 
 # Extended list of target keywords extracted as a constant
 INJECTION_KEYWORDS = [
@@ -79,11 +79,14 @@ class AIJudge:
         """
         Initializes the AI Judge with environment variables and the OpenAI client.
         """
-        self.api_key = os.getenv("AI_API_KEY")
-        self.model = os.getenv("AI_MODEL", "gpt-4o-mini")
-        self.temperature = float(os.getenv("AI_TEMPERATURE", 0.0))
+        # self.api_key = os.getenv("AI_API_KEY")
+        # self.model = os.getenv("AI_MODEL", "gpt-4o-mini")
+        # self.temperature = float(os.getenv("AI_TEMPERATURE", 0.0))
+        # self.bot_domain = os.getenv("BOT_DOMAIN", "General Assistant")
+        # self.client = AsyncOpenAI(api_key=self.api_key)
+
         self.bot_domain = os.getenv("BOT_DOMAIN", "General Assistant")
-        self.client = AsyncOpenAI(api_key=self.api_key)
+        self._llm = get_cached_provider()
 
     def _deterministic_scan(self, bot_reply: str, test_keywords: list[str] = None) -> str:
         """
@@ -131,14 +134,14 @@ class AIJudge:
             dict: Evaluation results including status, severity, and behavior_category.
         """
         # Return fallback status when the API key is missing
-        if not self.api_key:
-            return {
-                "step1_content_scan": "SKIPPED",
-                "status": "BROKEN",
-                "severity": "NONE",
-                "behavior_category": "SKIPPED",
-                "reason": "AI Judge skipped: AI_API_KEY not found"
-            }
+        # if not self.api_key:
+        #     return {
+        #         "step1_content_scan": "SKIPPED",
+        #         "status": "BROKEN",
+        #         "severity": "NONE",
+        #         "behavior_category": "SKIPPED",
+        #         "reason": "AI Judge skipped: AI_API_KEY not found"
+        #     }
 
         det_scan = self._deterministic_scan(bot_reply, test_keywords)
 
@@ -175,17 +178,26 @@ class AIJudge:
                 f"BOT RESPONSE: {bot_reply}"
             )
 
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                temperature=self.temperature,
-                messages=[
-                    {"role": "system", "content": system_msg},
-                    {"role": "user", "content": user_content}
-                ],
-                response_format={"type": "json_object"}
-            )
+            # response = await self.client.chat.completions.create(
+            #     model=self.model,
+            #     temperature=self.temperature,
+            #     messages=[
+            #         {"role": "system", "content": system_msg},
+            #         {"role": "user", "content": user_content}
+            #     ],
+            #     response_format={"type": "json_object"}
+            # )
+            #
+            # result = json.loads(response.choices[0].message.content)
 
-            result = json.loads(response.choices[0].message.content)
+            raw = await self._llm.complete(
+                prompt=user_content,
+                system=system_msg,
+                temperature=0.0,
+                max_tokens=1000,
+                json_mode=True,
+            )
+            result = json.loads(raw)
 
             # Protection against LLM hallucinations: Forced normalization
             if result.get("status") == "FAIL":

@@ -193,6 +193,8 @@ Workflow Status
 
     core/schemas.py: Data Contracts & Schemas. Централизованное хранилище Pydantic-моделей и энумераторов. Определяет строгие «контракты» данных для всей системы, обеспечивая валидацию и типизацию на каждом этапе: от парсинга исходных тестов до формирования сложных аналитических отчетов.
 
+    core/llm/: Multi-Provider LLM Engine (Новое). Унифицированный слой абстракции для работы с ИИ. Позволяет переключать «мозги» сканера (OpenAI, Anthropic, Ollama) одной строкой в .env. Централизует управление API-ключами, таймаутами и форматами ответов, избавляя остальные модули от дублирования кода.    
+
     core/evaluator.py: Basic Mode (Deterministic Evaluation). Быстрый локальный сканер на основе регулярных выражений и списков ключевых слов. Идеально для CI/CD и отсева базовых ошибок без затрат на API.
 
     core/advanced_evaluator.py: Advanced Mode (AI-Judge). Глубокий семантический анализ с использованием LLM (gpt-4o-mini). Выявляет сложные атаки (Crescendo, социальная инженерия, ролевые дрифты) и оценивает их критичность.
@@ -280,6 +282,16 @@ Workflow Status
 
 Режим Advanced подключает внешний LLM-движок (по умолчанию gpt-4o-mini) и алгоритмические методы обфускации для проведения автоматизированного AI Red Teaming. Он состоит из четырех интеллектуальных модулей: программного запутывания промптов, генерации уникальных пейлоадов, построения многоходовых атак и глубокого семантического анализа ответов.
 
+продвинутый режим стал полностью независимым от конкретной модели. Вы можете использовать GPT-4o для оценки, а локальную Llama-3 через Ollama — для генерации атак.
+
+Ключевые преимущества новой структуры:
+
+    Гибкость: Поддержка OpenAI, Anthropic и локальных моделей без переписывания модулей мутации.
+
+    Централизация: Настройки temperature, max_tokens и base_url теперь живут в одном месте.
+
+    Отказоустойчивость: Легко добавить логику автоматического переключения на резервного провайдера (fallback), если основной API недоступен.
+
 1. Prompt Obfuscation (Алгоритмическая маскировка)
 Модуль core/mutators.py (Buff-system) программно "запутывает" текстовые промпты, чтобы обойти базовые текстовые фильтры и проверить интерпретатор LLM:
 
@@ -321,3 +333,62 @@ Workflow Status
     📊 Severity Scoring: Каждому инциденту присваивается уровень критичности (от NONE до CRITICAL) и конкретная категория (например, ROLEPLAY_DRIFT), что позволяет строить точные метрики качества.
 
 Примечание: Этот режим требует валидного AI_API_KEY в переменных окружения. Без него сканер работает с нулевыми затратами (Zero cost) в режиме Basic.
+
+
+
+markdown
+
+## LLM Provider Configuration
+
+The scanner uses a unified LLM layer that supports OpenAI, Anthropic, and Ollama (local).
+Switch providers by changing two lines in `.env` — no code changes required.
+
+### .env setup
+
+```env
+# Existing (keep as-is)
+AI_API_KEY=sk-...
+
+# New: provider selection
+LLM_PROVIDER=openai        # openai | anthropic | ollama
+LLM_MODEL=gpt-4o           # model name for the selected provider
+OLLAMA_BASE_URL=            # only needed when LLM_PROVIDER=ollama
+```
+
+### Provider examples
+
+| Provider | LLM_PROVIDER | LLM_MODEL | AI_API_KEY |
+|---|---|---|---|
+| OpenAI | `openai` | `gpt-4o`, `gpt-4o-mini` | `sk-...` |
+| Anthropic | `anthropic` | `claude-sonnet-4-6`, `claude-haiku-4-5` | `sk-ant-...` |
+| Ollama (local) | `ollama` | `llama3`, `mistral` | *(not required)* |
+
+### Notes
+- `AI_MODEL` in older `.env` files is no longer read — replace with `LLM_MODEL`
+- Ollama requires a running local server: `ollama serve` + `ollama pull llama3`
+- `AI_API_KEY` stays unchanged regardless of provider
+
+Где BarkingDog выигрывает
+1. Единственный с Daemon Mode + Telegram
+Garak, Promptfoo, PyRIT — все они запускаются руками как CLI инструменты. Promptfoo BarkingDog единственный кто разворачивается раз и сам сканирует production каждую неделю, присылая отчёт в Telegram. Это реально уникально в этом классе.
+2. Black-box подход к production боту
+Большинство инструментов тестируют модель напрямую — через SDK или API провайдера. OnSecurity BarkingDog тестирует весь стек — RAG + system prompt + бизнес логика + API через реальный webhook. Это то что реально нужно владельцу бота.
+3. Domain-aware AI Judge
+Giskard и другие инструменты фокусируются на общих уязвимостях. Giskard BarkingDog знает что бот — это Miami Auto Detailing, и оценивает ответы в контексте домена. Это снижает false positives которые убивают доверие к инструменту.
+4. Over-Refusal Detection
+Никто из конкурентов не проверяет это из коробки. BarkingDog единственный кто говорит "бот слишком параноидален" — это важно для бизнеса.
+
+Где конкуренты сильнее
+Garak — 100+ векторов атак, тысячи промптов, интеграция с NVIDIA NeMo. CyCognito Ширина покрытия больше.
+Promptfoo — 156 компаний из Fortune 500, 300,000+ разработчиков. Promptfoo Экосистема и документация на другом уровне.
+DeepTeam — 50+ готовых уязвимостей, 20+ методов атак, OWASP/NIST/MITRE из коробки. GitHub BarkingDog пока не маппит результаты на стандарты.
+
+Честная итоговая оценка
+Уникальность концепции:     ████████░░  8/10
+Простота развёртывания:     █████████░  9/10  ← docker + daemon реально круто
+Multi-turn атаки:           ████████░░  8/10
+Ширина покрытия атак:       ██████░░░░  6/10  ← 4 теста в yaml это мало
+Экосистема / документация:  █████░░░░░  5/10  ← только начало
+Production-ready:           ████████░░  8/10  ← работающий отчёт доказывает
+Главный вывод: BarkingDog занимает нишу которую никто не занял — автономный production монитор для владельцев ботов без DevSecOps команды. Garak и Promptfoo — инструменты для разработчиков которые запускают их вручную. BarkingDog — инструмент для владельца бизнеса который просто получает отчёт в Telegram. Это сильная позиция.
+Главная слабость сейчас — маленькая библиотека тестов (checks.yaml). Когда она вырастет до 50-100 специализированных кейсов, инструмент станет серьёзным конкурентом в своей нише.

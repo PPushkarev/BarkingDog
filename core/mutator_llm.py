@@ -13,15 +13,15 @@ import logging
 import os
 from copy import deepcopy
 
-import httpx
-
+# import httpx
+from core.llm.factory import get_provider
 from core.schemas import TestCase
 
 
 # Configuration
-AI_API_KEY  = os.getenv("AI_API_KEY", "")
-AI_MODEL    = os.getenv("AI_MODEL", "gpt-4o-mini")
-AI_BASE_URL = "https://api.openai.com/v1/chat/completions"
+# AI_API_KEY  = os.getenv("AI_API_KEY", "")
+# AI_MODEL    = os.getenv("AI_MODEL", "gpt-4o-mini")
+# AI_BASE_URL = "https://api.openai.com/v1/chat/completions"
 
 # How many LLM variants to generate per check (env-overridable)
 MUTATIONS_PER_CHECK = int(os.getenv("MUTATIONS_PER_CHECK", "3"))
@@ -70,24 +70,32 @@ async def _call_llm(prompt_text: str, category: str, n: int) -> list[str]:
         f"Return a JSON array of {n} strings."
     )
 
-    headers = {
-        "Authorization": f"Bearer {AI_API_KEY}",
-        "Content-Type": "application/json",
-    }
-    body = {
-        "model": AI_MODEL,
-        "temperature": 0.9,          # High temperature ensures more diverse variants
-        "max_tokens": 800,
-        "messages": [
-            {"role": "system", "content": MUTATION_SYSTEM_PROMPT},
-            {"role": "user",   "content": user_prompt},
-        ],
-    }
+    # headers = {
+    #     "Authorization": f"Bearer {AI_API_KEY}",
+    #     "Content-Type": "application/json",
+    # }
+    # body = {
+    #     "model": AI_MODEL,
+    #     "temperature": 0.9,          # High temperature ensures more diverse variants
+    #     "max_tokens": 800,
+    #     "messages": [
+    #         {"role": "system", "content": MUTATION_SYSTEM_PROMPT},
+    #         {"role": "user",   "content": user_prompt},
+    #     ],
+    # }
+    #
+    # async with httpx.AsyncClient(timeout=30) as client:
+    #     resp = await client.post(AI_BASE_URL, headers=headers, json=body)
+    #     resp.raise_for_status()
+    #     raw = resp.json()["choices"][0]["message"]["content"].strip()
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(AI_BASE_URL, headers=headers, json=body)
-        resp.raise_for_status()
-        raw = resp.json()["choices"][0]["message"]["content"].strip()
+    raw = await get_provider().complete(
+        prompt=user_prompt,
+        system=MUTATION_SYSTEM_PROMPT,
+        temperature=0.9,
+        max_tokens=800,
+        json_mode=True,
+    )
 
     # Strip accidental markdown fences from the LLM output
     if raw.startswith("```"):
@@ -138,9 +146,9 @@ async def generate_mutations(
     Returns:
         list[TestCase]: An extended list starting with the original checks followed by all variants.
     """
-    if not AI_API_KEY:
-        logging.warning("[MUTATOR] AI_API_KEY not set — skipping LLM mutation.")
-        return checks
+    # if not AI_API_KEY:
+    #     logging.warning("[MUTATOR] AI_API_KEY not set — skipping LLM mutation.")
+    #     return checks
 
     mutable = [c for c in checks if c.category in MUTABLE_CATEGORIES]
     skipped = len(checks) - len(mutable)

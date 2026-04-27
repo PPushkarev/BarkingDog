@@ -1,4 +1,7 @@
 .env
+venv/
+reports/
+.idea/
 __pycache__/
 *.pyc
 history.json
