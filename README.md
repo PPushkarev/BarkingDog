@@ -124,3 +124,66 @@ BOT_DOMAIN	General	Business scope (helps AI Judge accuracy)
 SCAN_CONCURRENCY	5	Number of parallel requests
 SCAN_DELAY	0.5	Delay between requests (seconds)
 CRESCENDO_TURNS	4	Depth of multi-turn attack sequences
+
+
+
+
+
+
+
+🚀 CI/CD: Automated Security Auditing
+
+BarkingDog supports automated integration into any CI/CD pipeline. You can configure it to automatically trigger a security audit every time your target AI bot is updated.
+Pipeline Architecture
+
+The automation follows a Cross-Repository Dispatch pattern:
+
+    Trigger: Your Target Bot repository sends a repository_dispatch event upon a successful deployment or push.
+
+    Execution: BarkingDog receives the signal, builds a fresh Docker environment, and starts the audit against the provided TARGET_URL.
+
+    Reporting: * Artifacts: A full HTML security report is saved in the GitHub Actions "Summary" section.
+
+        Notifications: (Optional) Real-time attack logs and final results are sent to your Telegram bot.
+
+Setup Instructions
+1. Configure the Target Bot (Sender)
+
+Add the following workflow to your Bot's repository (.github/workflows/trigger-scan.yml) to notify BarkingDog after updates:
+YAML
+
+name: Trigger BarkingDog Scan
+on:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  ping-scanner:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Repository Dispatch
+        run: |
+          curl -L \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.SCANNER_REPO_PAT }}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/YOUR_USERNAME/BarkingDog/dispatches \
+            -d '{"event_type": "bot_updated"}'
+
+2. Configure BarkingDog (Receiver)
+
+The scanner uses the built-in barkingdog-security.yml workflow. Ensure the following GitHub Secrets are set in your BarkingDog repository:
+Secret	Description
+TARGET_URL	The public URL of the bot to be tested.
+AI_API_KEY	Your LLM provider API key (used by AI-Judge and Mutators).
+AEGIS_SECRET_TOKEN	(Optional) Header token to authorize the scanner on your bot.
+TELEGRAM_BOT_TOKEN	(Optional) Token for Telegram notifications.
+TELEGRAM_CHAT_ID	(Optional) Your Telegram Chat/Group ID.
+Workflow Status
+
+    Trigger Mechanism: repository_dispatch (Event type: bot_updated)
+
+    Environment: Dockerized Python 3.11-slim
+
+    Artifact Retention: 14 days
