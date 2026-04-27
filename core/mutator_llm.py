@@ -1,6 +1,5 @@
+# core/mutator_llm.py
 """
-core/mutator_llm.py
-
 LLM-based attack mutator for BarkingDog ADVANCED mode.
 Takes static checks from checks.yaml and generates N dynamic
 variants per check using the AI judge model.
@@ -8,10 +7,10 @@ variants per check using the AI judge model.
 Only runs when use_advanced=True — zero cost in BASIC mode.
 """
 
+import asyncio
 import json
 import logging
 import os
-import asyncio
 from copy import deepcopy
 
 import httpx
@@ -19,8 +18,7 @@ import httpx
 from core.schemas import TestCase
 
 
-# ── config ────────────────────────────────────────────────────────────────────
-
+# Configuration
 AI_API_KEY  = os.getenv("AI_API_KEY", "")
 AI_MODEL    = os.getenv("AI_MODEL", "gpt-4o-mini")
 AI_BASE_URL = "https://api.openai.com/v1/chat/completions"
@@ -54,10 +52,18 @@ Rules:
 """
 
 
-# ── helpers ───────────────────────────────────────────────────────────────────
-
 async def _call_llm(prompt_text: str, category: str, n: int) -> list[str]:
-    """Single LLM call → list of mutated payloads."""
+    """
+    Performs a single LLM call to generate a list of mutated payloads.
+
+    Args:
+        prompt_text (str): The original attack payload.
+        category (str): The category of the attack.
+        n (int): The number of variants to generate.
+
+    Returns:
+        list[str]: A list containing the generated mutated payloads.
+    """
     user_prompt = (
         f"Generate {n} rephrased variants of this '{category}' attack.\n\n"
         f"Original:\n{prompt_text}\n\n"
@@ -70,7 +76,7 @@ async def _call_llm(prompt_text: str, category: str, n: int) -> list[str]:
     }
     body = {
         "model": AI_MODEL,
-        "temperature": 0.9,          # high temp = more diverse variants
+        "temperature": 0.9,          # High temperature ensures more diverse variants
         "max_tokens": 800,
         "messages": [
             {"role": "system", "content": MUTATION_SYSTEM_PROMPT},
@@ -83,7 +89,7 @@ async def _call_llm(prompt_text: str, category: str, n: int) -> list[str]:
         resp.raise_for_status()
         raw = resp.json()["choices"][0]["message"]["content"].strip()
 
-    # Strip accidental markdown fences
+    # Strip accidental markdown fences from the LLM output
     if raw.startswith("```"):
         raw = raw.split("```")[1]
         if raw.startswith("json"):
@@ -95,15 +101,25 @@ async def _call_llm(prompt_text: str, category: str, n: int) -> list[str]:
 
 
 def _make_variant(original: TestCase, new_payload: str, idx: int) -> TestCase:
-    """Clone a TestCase with a new payload and updated ID."""
+    """
+    Clones a TestCase, assigning it a new payload and updated identification.
+
+    Args:
+        original (TestCase): The base test case to clone.
+        new_payload (str): The newly generated malicious prompt.
+        idx (int): The index of the mutation for tracking.
+
+    Returns:
+        TestCase: The newly mutated test case instance.
+    """
     variant = deepcopy(original)
     variant.prompt = new_payload
     variant.id = f"{original.id}_mut{idx}"
-    # Убираем строку variant.method = ... и добавляем пометку прямо в название теста
+
+    # Append mutation tag directly to the test name for clarity in reports
     variant.name = f"{original.name} (LLM Mutant {idx})"
     return variant
 
-# ── public API ────────────────────────────────────────────────────────────────
 
 async def generate_mutations(
     checks: list[TestCase],
@@ -111,16 +127,16 @@ async def generate_mutations(
     concurrency: int = 2,
 ) -> list[TestCase]:
     """
-    For each check in a mutable category, generate N LLM variants.
-    Returns the ORIGINAL checks + all generated variants.
+    Generates N LLM variants for each check that belongs to a mutable category.
+    Combines the original checks with all newly generated variants.
 
     Args:
-        checks:      original TestCase list from checks.yaml
-        n:           variants per check (default from MUTATIONS_PER_CHECK env var)
-        concurrency: max parallel LLM calls
+        checks (list[TestCase]): The original list of TestCases.
+        n (int): The number of variants to generate per check. Defaults to MUTATIONS_PER_CHECK.
+        concurrency (int): Maximum number of parallel LLM calls allowed.
 
     Returns:
-        Extended list: originals first, then all variants
+        list[TestCase]: An extended list starting with the original checks followed by all variants.
     """
     if not AI_API_KEY:
         logging.warning("[MUTATOR] AI_API_KEY not set — skipping LLM mutation.")
@@ -138,9 +154,12 @@ async def generate_mutations(
     variants: list[TestCase] = []
 
     async def _process(check: TestCase):
+        """
+        Internal worker to process a single test case mutation concurrently.
+        """
         async with semaphore:
             try:
-                # 🔥 ИСПРАВЛЕНО: было check.payload
+                # Fetch newly generated payloads based on the original prompt
                 new_payloads = await _call_llm(check.prompt, check.category, n)
                 for idx, p in enumerate(new_payloads[:n], start=1):
                     variants.append(_make_variant(check, p, idx))
@@ -155,5 +174,5 @@ async def generate_mutations(
         f"[MUTATOR] Done. {len(checks)} original + {len(variants)} variants = {total} total checks."
     )
 
-    # Originals first so report ordering stays readable
+    # Originals remain first so the report ordering stays readable
     return checks + variants

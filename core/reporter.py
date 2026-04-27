@@ -1,14 +1,72 @@
+# core/reporter.py
+"""
+Handles the generation of structured scan reports in HTML and JSON formats.
+Includes regression tracking (delta vs previous scan), SVG trend charts,
+category breakdowns, and per-test result rows with severity badges.
+"""
+
+# =============================================================================
+# Color thresholds for Security Score
+# =============================================================================
+SCORE_COLOR_HIGH = "#28a745"    # green  — score >= 90
+SCORE_COLOR_MID  = "#ffc107"    # yellow — score >= 70
+SCORE_COLOR_LOW  = "#dc3545"    # red    — score <  70
+
+# =============================================================================
+# Color palette for chart lines and status indicators
+# =============================================================================
+CHART_SCORE_COLOR = "#28a745"   # green line — Security Score trend
+CHART_ASR_COLOR   = "#dc3545"   # red line   — ASR trend
+
+# =============================================================================
+# Status display map: internal status key → (background color, text label)
+# =============================================================================
+STATUS_DISPLAY = {
+    "SKIP":          ("#f5f5f5", "#9e9e9e",  "⏭️ SKIP"),
+    "BROKEN":        ("#fff8e1", "#ff9800",  "🔧 BROKEN"),
+    "FAIL":          ("#fff5f5", "#dc3545",  "❌ FAIL"),
+    "BEHAVIOR_FAIL": ("#fffbeb", "#f59e0b",  "⚠️ BEHAVIOR_FAIL"),
+    "PASS":          ("#f5fff5", "#28a745",  "✅ PASS"),
+}
+
+# =============================================================================
+# Built-in
+# =============================================================================
 import os
 import json
+
+# =============================================================================
+# Third-party
+# (none currently)
+# =============================================================================
+
+# =============================================================================
+# Local
+# =============================================================================
 from core.schemas import ReportSummary, TestStatus
 from core.history import load_history, compute_delta, get_previous_scan
 
 
 class Reporter:
-    """Handles the generation of structured reports (HTML, JSON) from scan sessions."""
+    """
+    Generates structured HTML and JSON reports from completed scan sessions.
+
+    Supports regression tracking against previous scans, SVG trend charts,
+    category score breakdowns, and per-result detail rows.
+    """
 
     @staticmethod
     def generate_json(report: ReportSummary, output_dir: str = "reports") -> str:
+        """
+        Serializes a ReportSummary to a pretty-printed JSON file.
+
+        Args:
+            report: Completed scan summary including all test results.
+            output_dir: Directory where the JSON file will be written.
+
+        Returns:
+            Absolute path to the generated JSON file.
+        """
         os.makedirs(output_dir, exist_ok=True)
         filepath = os.path.join(output_dir, f"report_{report.session_id}.json")
         with open(filepath, "w", encoding="utf-8") as f:
@@ -17,12 +75,23 @@ class Reporter:
 
     @staticmethod
     def _build_trend_chart(history: list, current_report: ReportSummary) -> str:
-        """Generates an SVG line chart showing Score and ASR trends with dates."""
-        scores = []
-        asrs = []
-        dates = []
+        """
+        Generates an inline SVG polyline chart showing Security Score and ASR
+        over the last 10 scans, with date labels on the X-axis.
 
-        # Parse history
+        Args:
+            history: List of previous scan summaries (dicts or objects).
+            current_report: The current scan being reported.
+
+        Returns:
+            HTML string containing the SVG chart wrapped in a styled div,
+            or an empty string if fewer than 2 data points are available.
+        """
+        scores = []
+        asrs   = []
+        dates  = []
+
+        # Iterate history oldest-first (history is stored newest-first)
         for h in history[::-1]:
             if isinstance(h, dict):
                 scores.append(h.get("score", 0))
@@ -35,58 +104,62 @@ class Reporter:
 
             dates.append(str(ts)[:10] if ts else "")
 
-        # Add current report data
+        # Append current scan as the rightmost point
         scores.append(current_report.score)
         asrs.append(current_report.asr)
         curr_ts = getattr(current_report, "scan_date", "")
         dates.append(str(curr_ts)[:10] if curr_ts else "")
 
-        # Limit to last 10 scans
+        # Keep only the most recent 10 data points
         scores = scores[-10:]
-        asrs = asrs[-10:]
-        dates = dates[-10:]
+        asrs   = asrs[-10:]
+        dates  = dates[-10:]
 
         if not scores or len(scores) < 2:
             return ""
 
-        # SVG Dimensions
-        width = 600
-        height = 60
+        # SVG canvas dimensions
+        width     = 600
+        height    = 60
         padding_x = 35
         padding_y = 5
 
         x_step = (width - 2 * padding_x) / (len(scores) - 1)
 
         score_points = []
-        asr_points = []
-        dates_html = ""
+        asr_points   = []
+        dates_html   = ""
 
-        # Calculate points and labels
         for i in range(len(scores)):
             x = padding_x + (i * x_step)
 
-            # Y mapping (SVG Y grows downwards)
+            # SVG Y-axis grows downward, so invert the percentage mapping
             y_score = height - padding_y - (scores[i] / 100.0 * (height - 2 * padding_y))
-            y_asr = height - padding_y - (asrs[i] / 100.0 * (height - 2 * padding_y))
+            y_asr   = height - padding_y - (asrs[i]   / 100.0 * (height - 2 * padding_y))
 
             score_points.append(f"{x},{y_score}")
             asr_points.append(f"{x},{y_asr}")
 
-            # X-axis labels (Dates)
             if dates[i]:
-                dates_html += f'<text x="{x}" y="{height + 15}" font-size="9" fill="#9e9e9e" text-anchor="middle">{dates[i]}</text>'
+                dates_html += (
+                    f'<text x="{x}" y="{height + 15}" font-size="9" '
+                    f'fill="#9e9e9e" text-anchor="middle">{dates[i]}</text>'
+                )
 
         score_line = " ".join(score_points)
-        asr_line = " ".join(asr_points)
+        asr_line   = " ".join(asr_points)
 
-        score_color = "#28a745"  # Green
-        asr_color = "#dc3545"  # Red
-
+        # Build dot markers for each data point
         score_circles = "".join(
-            [f'<circle cx="{p.split(",")[0]}" cy="{p.split(",")[1]}" r="3" fill="{score_color}" />' for p in
-             score_points])
+            f'<circle cx="{p.split(",")[0]}" cy="{p.split(",")[1]}" '
+            f'r="3" fill="{CHART_SCORE_COLOR}" />'
+            for p in score_points
+        )
         asr_circles = "".join(
-            [f'<circle cx="{p.split(",")[0]}" cy="{p.split(",")[1]}" r="3" fill="{asr_color}" />' for p in asr_points])
+            f'<circle cx="{p.split(",")[0]}" cy="{p.split(",")[1]}" '
+            f'r="3" fill="{CHART_ASR_COLOR}" />'
+            for p in asr_points
+        )
 
         return f"""
             <div style="margin-bottom:20px; background:white; border:1px solid #e9ecef; border-radius:8px; padding:15px;">
@@ -95,17 +168,15 @@ class Reporter:
                         📈 Security Score & ASR Trend (Last {len(scores)} scans)
                     </div>
                     <div style="font-size:11px; font-weight:bold;">
-                        <span style="color:{score_color}; margin-right:12px;">● Score</span>
-                        <span style="color:{asr_color};">● ASR</span>
+                        <span style="color:{CHART_SCORE_COLOR}; margin-right:12px;">● Score</span>
+                        <span style="color:{CHART_ASR_COLOR};">● ASR</span>
                     </div>
                 </div>
                 <svg width="100%" height="85" viewBox="0 0 {width} 85" preserveAspectRatio="none" style="overflow:visible;">
-                    <polyline fill="none" stroke="{score_color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points="{score_line}" />
-                    <polyline fill="none" stroke="{asr_color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points="{asr_line}" />
-
+                    <polyline fill="none" stroke="{CHART_SCORE_COLOR}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points="{score_line}" />
+                    <polyline fill="none" stroke="{CHART_ASR_COLOR}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" points="{asr_line}" />
                     {score_circles}
                     {asr_circles}
-
                     {dates_html}
                 </svg>
             </div>
@@ -113,56 +184,73 @@ class Reporter:
 
     @staticmethod
     def generate_html(report: ReportSummary, output_dir: str = "reports") -> str:
+        """
+        Renders a full self-contained HTML security report for a scan session.
+
+        Includes: score board, regression delta badge, SVG trend chart,
+        skip warnings, status summary bar, category breakdown cards,
+        and a detailed per-test findings table.
+
+        Args:
+            report: Completed scan summary including all test results.
+            output_dir: Directory where the HTML file will be written.
+
+        Returns:
+            Absolute path to the generated HTML file.
+        """
         os.makedirs(output_dir, exist_ok=True)
         filepath = os.path.join(output_dir, f"report_{report.session_id}.html")
 
         is_adv = getattr(report, "use_advanced", False)
         mode_label = (
-            '<span style="background:#6200ea;color:white;padding:5px 10px;border-radius:4px;font-size:14px;vertical-align:middle;margin-left:10px;">ADVANCED MODE</span>'
+            '<span style="background:#6200ea;color:white;padding:5px 10px;border-radius:4px;'
+            'font-size:14px;vertical-align:middle;margin-left:10px;">ADVANCED MODE</span>'
             if is_adv else
-            '<span style="background:#455a64;color:white;padding:5px 10px;border-radius:4px;font-size:14px;vertical-align:middle;margin-left:10px;">BASIC MODE</span>'
+            '<span style="background:#455a64;color:white;padding:5px 10px;border-radius:4px;'
+            'font-size:14px;vertical-align:middle;margin-left:10px;">BASIC MODE</span>'
         )
 
-        # 🔥 ИСПРАВЛЕНО: Вернули skip_count и broken_count
-        pass_count = sum(1 for r in report.details if str(r.status).split('.')[-1].upper() == "PASS")
-        sec_fail_count = sum(1 for r in report.details if str(r.status).split('.')[-1].upper() == "FAIL")
-        beh_fail_count = sum(1 for r in report.details if str(r.status).split('.')[-1].upper() == "BEHAVIOR_FAIL")
-        skip_count = sum(1 for r in report.details if str(r.status).split('.')[-1].upper() == "SKIP")
-        broken_count = sum(1 for r in report.details if str(r.status).split('.')[-1].upper() == "BROKEN")
+        # Count results by status for the summary bar
+        def _status_key(r):
+            return str(r.status).split('.')[-1].upper()
 
-        # ── Regression tracking ──
-        history = load_history(limit=10)
+        pass_count     = sum(1 for r in report.details if _status_key(r) == "PASS")
+        sec_fail_count = sum(1 for r in report.details if _status_key(r) == "FAIL")
+        beh_fail_count = sum(1 for r in report.details if _status_key(r) == "BEHAVIOR_FAIL")
+        skip_count     = sum(1 for r in report.details if _status_key(r) == "SKIP")
+        broken_count   = sum(1 for r in report.details if _status_key(r) == "BROKEN")
+
+        # Load scan history for regression tracking and trend chart
+        history  = load_history(limit=10)
         previous = get_previous_scan(target_url=report.target_url)
-        delta = compute_delta(report, previous)
+        delta    = compute_delta(report, previous)
 
+        # ── Build per-test result rows ────────────────────────────────────────
         rows_html = ""
         for detail in report.details:
+            # Resolve display style from STATUS_DISPLAY lookup table
             if detail.status == TestStatus.SKIP or detail.is_skip:
-                row_bg = "#f5f5f5"
-                status_color = "#9e9e9e"
-                status_text = "⏭️ SKIP"
+                row_bg, status_color, status_text = STATUS_DISPLAY["SKIP"]
             elif detail.status == TestStatus.BROKEN or (detail.is_error and not detail.is_skip):
-                row_bg = "#fff8e1"
-                status_color = "#ff9800"
-                status_text = "🔧 BROKEN"
-            # 🔥 ИСПРАВЛЕНО: Убрали лишний отступ (IndentationError)
+                row_bg, status_color, status_text = STATUS_DISPLAY["BROKEN"]
             elif detail.status == TestStatus.FAIL:
-                row_bg = "#fff5f5"
-                status_color = "#dc3545"
-                status_text = "❌ FAIL"
+                row_bg, status_color, status_text = STATUS_DISPLAY["FAIL"]
             elif detail.status == TestStatus.BEHAVIOR_FAIL:
-                row_bg = "#fffbeb"
-                status_color = "#f59e0b"  # Amber
-                status_text = "⚠️ BEHAVIOR_FAIL"
+                row_bg, status_color, status_text = STATUS_DISPLAY["BEHAVIOR_FAIL"]
             else:
-                row_bg = "#f5fff5"
-                status_color = "#28a745"
-                status_text = "✅ PASS"
+                row_bg, status_color, status_text = STATUS_DISPLAY["PASS"]
 
             attack_method = getattr(detail, "technique", "original")
-            method_badge = f'<div style="font-size:10px;color:#7f8c8d;margin-top:4px;">METHOD: {attack_method.upper()} | CAT: {detail.behavior_category}</div>'
-            prompt_info = f'<div style="font-size:0.85em;color:#78909c;font-style:italic;margin-top:5px;">Payload: {detail.prompt_used[:60]}...</div>'
+            method_badge  = (
+                f'<div style="font-size:10px;color:#7f8c8d;margin-top:4px;">'
+                f'METHOD: {attack_method.upper()} | CAT: {detail.behavior_category}</div>'
+            )
+            prompt_info = (
+                f'<div style="font-size:0.85em;color:#78909c;font-style:italic;margin-top:5px;">'
+                f'Payload: {detail.prompt_used[:60]}...</div>'
+            )
 
+            # Skipped tests use a muted response style
             if detail.status == TestStatus.SKIP or detail.is_skip:
                 bot_response_html = f"""
                         <div style="background:rgba(0,0,0,0.04);padding:8px;border-radius:4px;border-left:3px solid #9e9e9e;margin-bottom:8px;">
@@ -194,31 +282,34 @@ class Reporter:
                     </tr>
                 """
 
-        # ── Цвета Score/ASR ──
-        score_color = "#dc3545" if report.score < 70 else ("#ffc107" if report.score < 90 else "#28a745")
+        # ── Score / ASR / BDR display colors ─────────────────────────────────
+        score_color = (
+            SCORE_COLOR_LOW if report.score < 70
+            else (SCORE_COLOR_MID if report.score < 90 else SCORE_COLOR_HIGH)
+        )
         asr_color = "#dc3545" if report.asr > 0 else "#28a745"
         bdr_color = "#f59e0b" if report.bdr > 0 else "#28a745"
 
-        # ── Delta badges ──
+        # ── Regression delta badge ────────────────────────────────────────────
         delta_html = ""
         if delta:
-            s_delta = delta.get("score_delta", 0)
-            a_delta = delta.get("asr_delta", 0)
-            # Если в истории нет vuln_delta (из-за старого формата), ставим 0
-            v_delta = delta.get("vuln_delta", 0)
-            prev_ts = delta.get("previous_timestamp", "Unknown")[:10]
+            s_delta  = delta.get("score_delta", 0)
+            a_delta  = delta.get("asr_delta", 0)
+            v_delta  = delta.get("vuln_delta", 0)   # may be absent in older history entries
+            prev_ts  = delta.get("previous_timestamp", "Unknown")[:10]
 
+            # Arrow and color logic: score going up is good, ASR going up is bad
             s_arrow = "▲" if s_delta > 0 else ("▼" if s_delta < 0 else "—")
             s_color = "#28a745" if s_delta >= 0 else "#dc3545"
-            s_sign = "+" if s_delta > 0 else ""
+            s_sign  = "+" if s_delta > 0 else ""
 
             a_arrow = "▼" if a_delta < 0 else ("▲" if a_delta > 0 else "—")
             a_color = "#28a745" if a_delta <= 0 else "#dc3545"
-            a_sign = "+" if a_delta > 0 else ""
+            a_sign  = "+" if a_delta > 0 else ""
 
             v_arrow = "▼" if v_delta < 0 else ("▲" if v_delta > 0 else "—")
             v_color = "#28a745" if v_delta <= 0 else "#dc3545"
-            v_sign = "+" if v_delta > 0 else ""
+            v_sign  = "+" if v_delta > 0 else ""
 
             delta_html = f"""
                 <div style="background:#f0f4ff;border:1px solid #c5d0e8;border-radius:8px;padding:14px 20px;margin-bottom:20px;display:flex;gap:30px;flex-wrap:wrap;align-items:center;">
@@ -244,16 +335,19 @@ class Reporter:
                 </div>
                 """
 
-        # ── Trend chart (SVG) ──
+        # ── SVG trend chart (only if enough history exists) ───────────────────
         trend_html = ""
         if len(history) >= 2:
             trend_html = Reporter._build_trend_chart(history, report)
 
-        # ── Category Breakdown ──
+        # ── Category breakdown cards ──────────────────────────────────────────
         cat_cards_html = ""
         if hasattr(report, "category_scores"):
             for cat, c_score in report.category_scores.items():
-                c_color = "#28a745" if c_score >= 90 else ("#ffc107" if c_score >= 70 else "#dc3545")
+                c_color = (
+                    "#28a745" if c_score >= 90
+                    else ("#ffc107" if c_score >= 70 else "#dc3545")
+                )
                 cat_cards_html += f"""
                         <div style="background:white;border:1px solid #e9ecef;padding:15px;border-radius:8px;text-align:center;min-width:150px;">
                             <div style="font-size:11px;color:#6c757d;text-transform:uppercase;margin-bottom:5px;">{cat.replace('_', ' ')}</div>
@@ -261,7 +355,7 @@ class Reporter:
                         </div>
                     """
 
-        # ── Status bar ──
+        # ── Summary status bar ────────────────────────────────────────────────
         status_bar_html = f"""
                 <div style="display:flex;gap:20px;background:#f8f9fa;padding:15px 20px;border-radius:8px;border:1px solid #e9ecef;margin-bottom:20px;flex-wrap:wrap;">
                     <div style="text-align:center;">
@@ -291,6 +385,7 @@ class Reporter:
                 </div>
             """
 
+        # ── Skip warning banners ──────────────────────────────────────────────
         skip_warning = ""
         if skip_count == report.total_tests:
             skip_warning = """
@@ -307,6 +402,7 @@ class Reporter:
                     </div>
                 """
 
+        # ── Full HTML document ────────────────────────────────────────────────
         html_content = f"""<!DOCTYPE html>
     <html lang="en">
     <head>
