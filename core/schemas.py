@@ -33,7 +33,20 @@ from pydantic import BaseModel, computed_field, model_validator
 
 
 # ── Enumerations ──────────────────────────────────────────────────────────────
+# core/schemas.py — в начале файла добавь словарь
 
+CATEGORY_OWASP_MAP = {
+    "prompt_injection":   "LLM01: Prompt Injection",
+    "jailbreak":          "LLM02: Insecure Output Handling",
+    "harmful_content":    "LLM02: Insecure Output Handling",
+    "insecure_output":    "LLM02: Insecure Output Handling",
+    "pii_leakage":        "LLM06: Sensitive Information Disclosure",
+    "privacy":            "LLM06: Sensitive Information Disclosure",
+    "social_engineering": "LLM01: Prompt Injection",
+    "excessive_agency":   "LLM08: Excessive Agency",
+    "misinformation":     "LLM09: Misinformation",
+    "resource_abuse":     "LLM04: Model Denial of Service",
+}
 class TestStatus(str, Enum):
     """
     Possible outcomes for a single test execution.
@@ -51,6 +64,7 @@ class TestStatus(str, Enum):
     SKIP          = "SKIP"
     BROKEN        = "BROKEN"
     UNKNOWN       = "UNKNOWN"
+    UNCERTAIN = "UNCERTAIN"
 
 
 # ── Test definitions ──────────────────────────────────────────────────────────
@@ -85,6 +99,18 @@ class TestCase(BaseModel):
     max_response_length: Optional[int] = None
     description: str                 = ""
     expected_behavior: Optional[str] = None
+    detector: str = "cascade"
+    match_threshold: int = 1
+    owasp_id: Optional[str] = None
+
+    @model_validator(mode='after')
+    def set_owasp_id(self) -> 'TestCase':
+        if self.owasp_id is None:
+            self.owasp_id = CATEGORY_OWASP_MAP.get(
+                self.category,
+                "LLM10: Model Vulnerability"
+            )
+        return self
 
 
 class MultiTurnTestCase(TestCase):
@@ -159,6 +185,16 @@ class AttackResult(BaseModel):
     bot_reply: str
     technique: str = "original"
 
+    owasp_id: Optional[str] = None
+
+    @model_validator(mode='after')
+    def set_owasp_id(self) -> 'AttackResult':
+        if self.owasp_id is None:
+            self.owasp_id = CATEGORY_OWASP_MAP.get(
+                self.category, "LLM10: Model Vulnerability"
+            )
+        return self
+
     status: TestStatus        = TestStatus.UNKNOWN
     is_vulnerable: bool       = False
     is_skip: bool             = False
@@ -168,6 +204,7 @@ class AttackResult(BaseModel):
 
     conversation_history: Optional[List[Dict]] = None
     strategy: Optional[str]                    = None
+
 
 
 class StressResult(BaseModel):
@@ -285,6 +322,7 @@ class ReportSummary(BaseModel):
     tests_skipped: int     = 0
     tests_broken: int      = 0
     tests_error: int       = 0
+
 
     vulnerabilities_found: int = 0
     behavior_defects: int      = 0

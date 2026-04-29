@@ -104,28 +104,38 @@ async def _call_llm(prompt_text: str, category: str, n: int) -> list[str]:
             raw = raw[4:]
     raw = raw.strip()
 
+    # variants = json.loads(raw)
+    # return [str(v).strip() for v in variants if str(v).strip()]
+
     variants = json.loads(raw)
-    return [str(v).strip() for v in variants if str(v).strip()]
+
+
+    if isinstance(variants, dict):
+        for key in ["result", "results", "variants", "payloads", "array"]:
+            if key in variants and isinstance(variants[key], list):
+                variants = variants[key]
+                break
+
+    cleaned = []
+    for v in variants:
+        s = str(v).strip()
+
+        if len(s) >= 20 and s.lower() not in {"result", "array", "variants", "rephrased_payloads", "output",
+                                              "response"}:
+            cleaned.append(s)
+
+    return cleaned
 
 
 def _make_variant(original: TestCase, new_payload: str, idx: int) -> TestCase:
-    """
-    Clones a TestCase, assigning it a new payload and updated identification.
-
-    Args:
-        original (TestCase): The base test case to clone.
-        new_payload (str): The newly generated malicious prompt.
-        idx (int): The index of the mutation for tracking.
-
-    Returns:
-        TestCase: The newly mutated test case instance.
-    """
-    variant = deepcopy(original)
+    variant = original.model_copy()
     variant.prompt = new_payload
     variant.id = f"{original.id}_mut{idx}"
-
-    # Append mutation tag directly to the test name for clarity in reports
     variant.name = f"{original.name} (LLM Mutant {idx})"
+
+
+    variant.owasp_id = getattr(original, "owasp_id", "LLM10: Model Vulnerability")
+
     return variant
 
 

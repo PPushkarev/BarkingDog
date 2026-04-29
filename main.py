@@ -125,7 +125,6 @@ async def _run_multiturn_phase(
 
 
 # ── Core audit pipeline ───────────────────────────────────────────────────────
-
 async def run_full_audit(
     url: str,
     checks_path: str,
@@ -156,9 +155,13 @@ async def run_full_audit(
         Tuple of (ReportSummary, exit_code) where exit_code is 0 (pass)
         or 1 (regression / threshold exceeded).
     """
-    test_cases = load_yaml_checks(checks_path)
-    print(f"[*] Loaded {len(test_cases)} static checks from {checks_path}")
+    # 1. Загружаем чистые статические тесты
+    original_cases = load_yaml_checks(checks_path)
+    print(f"[*] Loaded {len(original_cases)} static checks from {checks_path}")
 
+    # Это список, который пойдет в движок на Фазе 1
+    # По умолчанию он равен оригиналам
+    phase_1_cases = list(original_cases)
     mt_cases: list[MultiTurnTestCase] = []
 
     if use_advanced:
@@ -169,11 +172,13 @@ async def run_full_audit(
                 f"[*] ADVANCED: generating {mutations_n} LLM variants per mutable check...\n"
                 f"    This takes ~30–60 sec. Set MUTATIONS_PER_CHECK=0 to disable.\n"
             )
-            test_cases = await generate_mutations(test_cases, n=mutations_n)
-            print(f"[*] Total checks after mutation: {len(test_cases)}\n")
+            # generate_mutations возвращает оригиналы + новые LLM-мутации
+            # Сохраняем это в phase_1_cases
+            phase_1_cases = await generate_mutations(original_cases, n=mutations_n)
+            print(f"[*] Total single-turn checks after mutation: {len(phase_1_cases)}\n")
 
         # Phase B: generate multi-turn crescendo sequences
-        n_turns    = int(os.getenv("CRESCENDO_TURNS", "4"))
+        n_turns = int(os.getenv("CRESCENDO_TURNS", "4"))
         n_variants = int(os.getenv("CRESCENDO_VARIANTS", "2"))
         if n_variants > 0:
             print(
@@ -181,8 +186,9 @@ async def run_full_audit(
                 f"({n_turns} turns × {n_variants} variants per check)...\n"
                 f"    Set CRESCENDO_VARIANTS=0 to disable.\n"
             )
+            # КРИТИЧНО: Передаем СТРОГО original_cases, а не раздутый phase_1_cases
             _, mt_cases = await generate_crescendo_mutations(
-                test_cases, n_turns=n_turns, n_variants=n_variants
+                original_cases, n_turns=n_turns, n_variants=n_variants
             )
             print(f"[*] Multi-turn sequences ready: {len(mt_cases)}\n")
 
@@ -197,7 +203,8 @@ async def run_full_audit(
         use_advanced=use_advanced,
     )
     print(f"[*] PHASE 1: Starting logic security scan (Concurrency: {concurrency}, Delay: {delay}s)...\n")
-    report = await engine.run_all(url, test_cases)
+    # КРИТИЧНО: Запускаем движок с phase_1_cases (включающим оригиналы + мутации)
+    report = await engine.run_all(url, phase_1_cases)
 
     # ── Phase 2: multi-turn scan (advanced only) ──────────────────────────────
     if mt_cases:
@@ -263,6 +270,180 @@ async def run_full_audit(
 
     await TelegramDelivery.send_report(report, html_path)
     return report, exit_code
+
+#
+# async def run_full_audit(
+#     url: str,
+#     checks_path: str,
+#     use_advanced: bool = False,
+# ):
+#     """
+#     Runs the complete BarkingDog audit pipeline against the target bot URL.
+#
+#     BASIC mode  — single-turn static checks only.
+#     ADVANCED mode — static checks + LLM single-turn mutations +
+#                     multi-turn crescendo / roleplay sequences.
+#
+#     Pipeline steps:
+#       1. Load static YAML checks.
+#       2. (Advanced) Generate LLM single-turn mutations.
+#       3. (Advanced) Generate multi-turn crescendo sequences.
+#       4. Phase 1: single-turn scan via AsyncAuditEngine.
+#       5. Phase 2: multi-turn scan via MultiTurnRunner (advanced only).
+#       6. Persist to history, generate HTML + JSON reports.
+#       7. Deliver report to Telegram.
+#
+#     Args:
+#         url:          Bot webhook endpoint to audit.
+#         checks_path:  Path to the YAML file containing base test cases.
+#         use_advanced: If True, enables mutation and multi-turn phases.
+#
+#     Returns:
+#         Tuple of (ReportSummary, exit_code) where exit_code is 0 (pass)
+#         or 1 (regression / threshold exceeded).
+#     """
+#     test_cases = load_yaml_checks(checks_path)
+#     print(f"[*] Loaded {len(test_cases)} static checks from {checks_path}")
+#
+#     mt_cases: list[MultiTurnTestCase] = []
+#
+#     if use_advanced:
+#         # Создаем копию оригинальных тестов для мутаций
+#         single_turn_cases = list(test_cases)
+#
+#         # Phase A: generate LLM single-turn variants for each base check
+#         mutations_n = int(os.getenv("MUTATIONS_PER_CHECK", "3"))
+#         if mutations_n > 0:
+#             print(
+#                 f"[*] ADVANCED: generating {mutations_n} LLM variants per mutable check...\n"
+#                 f"    This takes ~30–60 sec. Set MUTATIONS_PER_CHECK=0 to disable.\n"
+#             )
+#             # Присваиваем результат в отдельную переменную, а не перезаписываем test_cases
+#             single_turn_cases = await generate_mutations(test_cases, n=mutations_n)
+#             print(f"[*] Total single-turn checks after mutation: {len(single_turn_cases)}\n")
+#
+#         # Phase B: generate multi-turn crescendo sequences
+#         n_turns = int(os.getenv("CRESCENDO_TURNS", "4"))
+#         n_variants = int(os.getenv("CRESCENDO_VARIANTS", "2"))
+#         if n_variants > 0:
+#             print(
+#                 f"[*] ADVANCED: generating crescendo sequences "
+#                 f"({n_turns} turns × {n_variants} variants per check)...\n"
+#                 f"    Set CRESCENDO_VARIANTS=0 to disable.\n"
+#             )
+#             # Передаем оригинальные test_cases, а не раздутый single_turn_cases!
+#             _, mt_cases = await generate_crescendo_mutations(
+#                 test_cases, n_turns=n_turns, n_variants=n_variants
+#             )
+#             print(f"[*] Multi-turn sequences ready: {len(mt_cases)}\n")
+#
+#         # Теперь объединяем одноходовые (оригиналы + LLM мутанты) с многоходовыми
+#         test_cases = single_turn_cases
+#
+#     if use_advanced:
+#         # Phase A: generate LLM single-turn variants for each base check
+#         mutations_n = int(os.getenv("MUTATIONS_PER_CHECK", "3"))
+#         if mutations_n > 0:
+#             print(
+#                 f"[*] ADVANCED: generating {mutations_n} LLM variants per mutable check...\n"
+#                 f"    This takes ~30–60 sec. Set MUTATIONS_PER_CHECK=0 to disable.\n"
+#             )
+#             test_cases = await generate_mutations(test_cases, n=mutations_n)
+#             print(f"[*] Total checks after mutation: {len(test_cases)}\n")
+#
+#         # Phase B: generate multi-turn crescendo sequences
+#         n_turns    = int(os.getenv("CRESCENDO_TURNS", "4"))
+#         n_variants = int(os.getenv("CRESCENDO_VARIANTS", "2"))
+#         if n_variants > 0:
+#             print(
+#                 f"[*] ADVANCED: generating crescendo sequences "
+#                 f"({n_turns} turns × {n_variants} variants per check)...\n"
+#                 f"    Set CRESCENDO_VARIANTS=0 to disable.\n"
+#             )
+#             _, mt_cases = await generate_crescendo_mutations(
+#                 test_cases, n_turns=n_turns, n_variants=n_variants
+#             )
+#             print(f"[*] Multi-turn sequences ready: {len(mt_cases)}\n")
+#
+#
+#
+#     # Read Phase 1 concurrency / delay from environment
+#     delay       = float(os.getenv("SCAN_DELAY", "0.5"))
+#     concurrency = int(os.getenv("SCAN_CONCURRENCY", "5"))
+#
+#     # ── Phase 1: single-turn scan ─────────────────────────────────────────────
+#     engine = AsyncAuditEngine(
+#         concurrency_limit=concurrency,
+#         delay_seconds=delay,
+#         use_advanced=use_advanced,
+#     )
+#     print(f"[*] PHASE 1: Starting logic security scan (Concurrency: {concurrency}, Delay: {delay}s)...\n")
+#     report = await engine.run_all(url, test_cases)
+#
+#         # ── Phase 2: multi-turn scan (advanced only) ──────────────────────────────
+#     if mt_cases:
+#         print(f"[*] PHASE 2: Multi-turn crescendo scan ({len(mt_cases)} sequences)...\n")
+#
+#         mt_results = await _run_multiturn_phase(url, mt_cases, engine.ai_judge)
+#
+#         sec_fails = sum(1 for r in mt_results if r.status == TestStatus.FAIL)
+#         beh_fails = sum(1 for r in mt_results if r.status == TestStatus.BEHAVIOR_FAIL)
+#         score_loss = 0
+#
+#         # Accumulate weighted score penalties from severity lookup tables
+#         for r in mt_results:
+#             if r.status == TestStatus.FAIL:
+#                 score_loss += SEVERITY_PENALTY_FAIL.get(r.severity, 10)
+#             elif r.status == TestStatus.BEHAVIOR_FAIL:
+#                 score_loss += SEVERITY_PENALTY_BEHAVIOR.get(r.severity, 3)
+#
+#         report.details.extend(mt_results)
+#         report.total_tests          += len(mt_results)
+#         report.vulnerabilities_found += sec_fails
+#         report.behavior_defects      += beh_fails
+#
+#         report.multiturn = MultiTurnSummary(
+#             total=len(mt_results),
+#             security_fails=sec_fails,
+#             behavior_fails=beh_fails,
+#         )
+#
+#         # Recalculate top-level ASR and apply multi-turn score penalties
+#         report.asr   = round(report.vulnerabilities_found / report.total_tests * 100, 2)
+#         report.score = max(0, report.score - score_loss)
+#
+#         print(
+#             f"[*] Phase 2 done. Security Fails: {sec_fails}, Behavior Defects: {beh_fails}. "
+#             f"(ASR: {report.multiturn.asr}%, BDR: {report.multiturn.bdr}%)\n"
+#         )
+#
+#     # ── History, reports, CI/CD ───────────────────────────────────────────────
+#     previous  = get_previous_scan(target_url=report.target_url)
+#     save_to_history(report)
+#
+#     html_path = Reporter.generate_html(report, output_dir="reports")
+#     json_path = Reporter.generate_json(report, output_dir="reports")
+#
+#     print(f" 📄 HTML Report saved to: {html_path}")
+#     print(f" 📄 JSON Report saved to: {json_path}")
+#
+#     exit_code = get_ci_exit_code(report, previous, asr_threshold=5.0)
+#     delta     = compute_delta(report, previous)
+#
+#     if delta:
+#         s       = delta["score_delta"]
+#         a       = delta["asr_delta"]
+#         arrow_s = "▲" if s > 0 else ("▼" if s < 0 else "—")
+#         arrow_a = "▼" if a < 0 else ("▲" if a > 0 else "—")
+#         print(f"\n📊 Regression: Score {delta['previous_score']} → {report.score} {arrow_s}{s:+d}")
+#         print(f"📊 Regression: ASR   {delta['previous_asr']}% → {report.asr}% {arrow_a}{a:+.2f}%")
+#         if exit_code == 1:
+#             print("⚠️  CI: REGRESSION DETECTED — ASR increased or exceeds threshold")
+#     else:
+#         print("\n📊 Regression: first scan for this target, no baseline yet")
+#
+#     await TelegramDelivery.send_report(report, html_path)
+#     return report, exit_code
 
 
 # ── Daemon mode ───────────────────────────────────────────────────────────────

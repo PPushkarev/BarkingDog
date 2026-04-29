@@ -214,11 +214,13 @@ class Reporter:
         def _status_key(r):
             return str(r.status).split('.')[-1].upper()
 
-        pass_count     = sum(1 for r in report.details if _status_key(r) == "PASS")
+        pass_count = sum(1 for r in report.details if _status_key(r) == "PASS")
         sec_fail_count = sum(1 for r in report.details if _status_key(r) == "FAIL")
         beh_fail_count = sum(1 for r in report.details if _status_key(r) == "BEHAVIOR_FAIL")
-        skip_count     = sum(1 for r in report.details if _status_key(r) == "SKIP")
-        broken_count   = sum(1 for r in report.details if _status_key(r) == "BROKEN")
+        skip_count = sum(1 for r in report.details if _status_key(r) == "SKIP")
+        broken_count = sum(1 for r in report.details if _status_key(r) == "BROKEN")
+
+        conducted_tests = pass_count + sec_fail_count + beh_fail_count + broken_count + skip_count
 
         # Load scan history for regression tracking and trend chart
         history  = load_history(limit=10)
@@ -380,7 +382,7 @@ class Reporter:
                     </div>
                     <div style="text-align:center;margin-left:auto;">
                         <div style="font-size:11px;color:#6c757d;text-transform:uppercase;">Conducted</div>
-                        <div style="font-size:22px;font-weight:bold;">{report.tests_completed} / {report.total_tests}</div>
+                        <div style="font-size:22px;font-weight:bold;">{conducted_tests} / {report.total_tests}</div>
                     </div>
                 </div>
             """
@@ -389,18 +391,64 @@ class Reporter:
         skip_warning = ""
         if skip_count == report.total_tests:
             skip_warning = """
-                    <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:15px 20px;margin-bottom:20px;">
-                        <strong>⚠️ All tests were skipped.</strong> The target endpoint rejected all requests.
-                        Check that <code>AEGIS_SECRET_TOKEN</code> is correctly set in both BarkingDog and the target bot.
-                    </div>
-                """
+                            <div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:15px 20px;margin-bottom:20px;">
+                                <strong>⚠️ All tests were skipped.</strong> The target endpoint rejected all requests.
+                                Check that <code>AEGIS_SECRET_TOKEN</code> is correctly set in both BarkingDog and the target bot.
+                            </div>
+                        """
         elif skip_count > 0:
             skip_warning = f"""
-                    <div style="background:#e3f2fd;border:1px solid #90caf9;border-radius:8px;padding:12px 20px;margin-bottom:20px;">
-                        <strong>ℹ️ {skip_count} test(s) were skipped</strong> — endpoint rejected those requests.
-                        ASR and Score are calculated only from conducted tests.
-                    </div>
-                """
+                            <div style="background:#e3f2fd;border:1px solid #90caf9;border-radius:8px;padding:12px 20px;margin-bottom:20px;">
+                                <strong>ℹ️ {skip_count} test(s) were skipped</strong> — endpoint rejected those requests.
+                                ASR and Score are calculated only from conducted tests.
+                            </div>
+                        """
+
+        # ── OWASP Compliance Table ───────────────────────────────────────────────
+        owasp_summary = {}
+        for detail in report.details:
+            oid = getattr(detail, "owasp_id", "LLM10: Model Vulnerability")
+
+            if oid not in owasp_summary:
+                owasp_summary[oid] = {"passed": 0, "failed": 0, "total": 0}
+
+            owasp_summary[oid]["total"] += 1
+
+            if _status_key(detail) in ["PASS", "SKIP", "UNCERTAIN"]:
+                owasp_summary[oid]["passed"] += 1
+            else:
+                owasp_summary[oid]["failed"] += 1
+
+        owasp_rows_html = ""
+        for oid, stats in sorted(owasp_summary.items()):
+            if stats["failed"] > 0:
+                status_badge = '<span style="color:#dc3545;font-weight:bold;">⚠️ AT RISK</span>'
+            else:
+                status_badge = '<span style="color:#28a745;font-weight:bold;">✅ SECURE</span>'
+
+            oid_parts = oid.split(":", 1)
+            oid_code = oid_parts[0]
+            oid_name = oid_parts[1].strip() if len(oid_parts) > 1 else oid
+
+            owasp_rows_html += f"""
+                            <tr style="background-color: white;">
+                                <td><strong>{oid_code}</strong></td>
+                                <td>{oid_name}</td>
+                                <td>{status_badge} <span style="font-size: 12px; color: #666;">({stats['passed']}/{stats['total']} passed)</span></td>
+                            </tr>
+                        """
+
+        owasp_html = f"""
+                    <h2 style="margin-top:30px;">🛡️ OWASP Top 10 Compliance</h2>
+                    <table>
+                        <tr>
+                            <th style="width: 15%;">OWASP ID</th>
+                            <th style="width: 50%;">Vulnerability Name</th>
+                            <th style="width: 35%;">Status</th>
+                        </tr>
+                        {owasp_rows_html}
+                    </table>
+                    """
 
         # ── Full HTML document ────────────────────────────────────────────────
         html_content = f"""<!DOCTYPE html>
@@ -446,7 +494,7 @@ class Reporter:
             </div>
             <div class="score-item">
                 <div class="score-label">Tests Completed</div>
-                <div class="score-value">{report.tests_completed} / {report.total_tests}</div>
+                <div class="score-value">{conducted_tests} / {report.total_tests}</div>
             </div>
         </div>
 
@@ -454,6 +502,8 @@ class Reporter:
         {trend_html}
         {skip_warning}
         {status_bar_html}
+
+        {owasp_html}
 
         <h2 style="margin-top:30px;">📂 Category Breakdown</h2>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:15px;margin-bottom:30px;">

@@ -281,6 +281,7 @@ class MultiTurnRunner:
             prompt_used=test.turns[-1],
             bot_reply=target_response,
             technique=f"multi_turn_{test.strategy}",
+            owasp_id=getattr(test, 'owasp_id', "LLM10: Model Vulnerability"),
             status=final_status,
             is_vulnerable=is_vulnerable,
             is_error=is_error,
