@@ -1,28 +1,50 @@
-# BarkingDog — Architecture & Internals
+<div align="center">
+  <h1>🏗️ BarkingDog — Architecture & Internals</h1>
+  <p><strong>A deep dive into the engine, modules, and evaluation pipeline.</strong></p>
+</div>
 
-This document describes the internal design of BarkingDog: how the audit pipeline works, what each module does, how metrics are calculated, and how to extend the system.
+This document describes the internal design of **BarkingDog**: how the audit pipeline works, what each module does, how metrics are calculated, and how you can extend the system.
 
 ---
 
-## Repository Structure
+## 📂 Repository Structure
 
-```
+The project is modular by design, separating the orchestration engine, AI integrations, attack mutators, and reporting tools.
+```text
 barkingdog/
 ├── main.py                    # Audit Pipeline Orchestrator & CLI
-├── core/
-│   ├── schemas.py             # Data Contracts & Pydantic Models
-│   ├── llm/                   # Multi-Provider LLM Engine
-│   ├── evaluator.py           # Basic Mode — Deterministic Evaluation
-│   ├── advanced_evaluator.py  # Advanced Mode — AI Judge
-│   ├── mutators.py            # Prompt Obfuscation (Base64 / ROT13 / Swapcase)
-│   ├── mutator_llm.py         # Dynamic Payload Generation via LLM
-│   ├── mutator_crescendo.py   # Multi-Turn Attack Sequence Generator
-│   ├── session_runner.py      # Multi-Turn Execution Engine
-│   ├── audit_engine.py        # Core Orchestration Engine
-│   ├── reporter.py            # JSON & HTML Report Generator
-│   ├── delivery.py            # Notification & Delivery (Telegram)
-│   └── history.py             # History, Regression Tracking & CI/CD Exit Codes
-└── checks.yaml                # Test case library
+├── import_jbb.py              # Utility for importing external test suites
+│
+├── .github/workflows/         # CI/CD Automation
+│   └── barkingdog-security.yml # GitHub Actions pipeline config
+│
+├── data/                      # 🎯 Core Test Case Libraries
+│   ├── checks.yaml            # Primary attack vectors (OWASP mapped)
+│   ├── crescendo_templates.yaml # Templates for multi-turn roleplay attacks
+│   └── jbb_smart_checks.yaml  # Extended Jailbreak Boss smart checks
+│
+└── core/
+    ├── schemas.py             # Data Contracts & Pydantic Models
+    ├── engine.py              # Core Orchestration Engine
+    ├── session_runner.py      # Multi-Turn Execution Engine
+    ├── evaluator.py           # Basic Mode — Deterministic Evaluation
+    ├── advanced_evaluator.py  # Advanced Mode — AI Judge
+    ├── history.py             # History, Regression Tracking & CI/CD Exit Codes
+    ├── reporter.py            # JSON & HTML Report Generator
+    ├── delivery.py            # Notification & Delivery engine
+    ├── telegram_adapter.py    # Telegram integration for reports & alerts
+    │
+    ├── llm/                   # 🧠 Multi-Provider LLM Engine
+    │   ├── base.py            # Abstract Base Class for LLMs
+    │   ├── factory.py         # Provider Factory
+    │   ├── openai_provider.py # OpenAI Integration
+    │   ├── anthropic_provider.py # Anthropic Integration
+    │   └── ollama_provider.py # Local Ollama Integration
+    │
+    └── mutators/              # 🦠 Attack Generators
+        ├── mutators.py        # Static Obfuscation (Base64, ROT13, Swapcase)
+        ├── mutator_llm.py     # Dynamic Payload Generation via LLM
+        └── mutator_crescendo.py # Multi-Turn Attack Sequence Generator
 ```
 
 ---
