@@ -1,8 +1,8 @@
 <div align="center">
   <img src="assets/reportphoto.jpg" alt="BarkingDog" width="800">
   <h1>🐶 BarkingDog</h1>
-  <p><strong>AI Security Scanner for Telegram Bots & LLM Web Apps</strong></p>
-  <p>Production webhook red-teaming with Multi-turn Crescendo attacks. <code>docker run</code> — and the report is ready.</p>
+  <p><strong>Automated Red-Teaming Scanner for Any LLM Application & AI Agent (HTTP Webhooks, MCP, Web Chatbots, WhatsApp)</strong></p>
+  <p>Production-grade security auditing powered by Multi-turn Crescendo attacks and dynamic fuzzing. <code>docker run</code> — get an OWASP-mapped vulnerability report instantly.</p>
   <br>
   <a href="http://htmlpreview.github.io/?https://github.com/PPushkarev/BarkingDog/blob/main/assets/Report.htm">
     <img src="https://img.shields.io/badge/Demo-View%20Live%20Report-brightgreen?style=for-the-badge&logo=html5" alt="Live Report">
@@ -11,7 +11,7 @@
 
 <br>
 
-## **🐶 BarkingDog** — the only scanner that tests your bot the way a real user would: through a production webhook, the Telegram interface, and a 4-step roleplay.
+## **🐶 BarkingDog** — the only scanner that treats your AI application as a black box, testing the entire production stack end-to-end via HTTP webhooks and multi-step tool-calling roleplay.
 
 
 ---
@@ -65,7 +65,14 @@
 
 ## 🎯 Why BarkingDog?
 
-Every LLM application is a potential attack surface. Standard evaluation frameworks measure response quality: faithfulness, context recall, relevancy. BarkingDog closes the security gap through automated adversarial red teaming.
+Every LLM deployment is an attack surface. Traditional evaluation frameworks measure output quality (faithfulness, context recall), but fail to detect active security breaches. 
+
+In the era of **Agentic AI**, the threat landscape has shifted. With enterprise apps deploying autonomous AI Agents and MCP (Model Context Protocol) tools, attackers target the agent's tools, webhooks, and execution paths. BarkingDog closes this security gap through automated adversarial red teaming.
+
+**Supported Targets:**
+* **Web Chatbots:** Custom GPT wrappers, Intercom/Tidio AI integrations.
+* **AI Agents & MCP Servers:** Assistants with tool-calling capabilities via HTTP endpoints.
+* **Messengers:** Enterprise WhatsApp Business API cores and Telegram bots.
 
 | Framework | Primary Focus |
 |---|---|
@@ -168,7 +175,7 @@ python main.py --url https://your-bot.app/webhook/aegis-scan --advanced
 ---
 
 ## 🔌 Bot Integration (FastAPI)
-
+> 💡 **Architectural Note:** While the examples below use a standard bot webhook format, `TARGET_URL` can be ANY HTTP endpoint that accepts a JSON payload with a user message and returns a text reply. This natively includes custom Web Chatbot backends, WhatsApp API orchestrators, and MCP agent tool-endpoints.
 ### Scenario A: Add an isolated `aegis-scan` endpoint to your bot.
 This prevents pollution of real analytics and does not trigger CRM actions during scanning.
 
@@ -346,8 +353,7 @@ Metrics (ASR, BDR, Security Score) are calculated using a weighted penalty syste
 ## 👤 Who Is This For?
 
 ### ✅ Primary Audience (ICP)
-
-**An indie developer or small business with a Telegram LLM bot** — they built a chatbot, have no DevSecOps engineer, and want to know: "can I be hacked?" These are exactly the people who need `docker run` and a Telegram report, not 100 attack vectors in a CLI.
+**Founders, indie developers, and small businesses deploying AI Agents or Chatbots (Web, WhatsApp, Telegram, MCP)** — you built an LLM application, have no dedicated DevSecOps engineer, and want to know: "can my AI be manipulated into executing malicious tools or leaking data?" You need a simple `docker run` execution and a clear report, not 100 attack vectors in a complex CLI tool.
 
 **Secondary segments:**
 - Early-stage AI/LLM startups (1–5 people) who want to add security to CI without hiring a security engineer.
