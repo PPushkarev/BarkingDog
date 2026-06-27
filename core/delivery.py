@@ -97,3 +97,73 @@ class TelegramDelivery:
                 await client.post(doc_url, data={"chat_id": chat_id}, files={"document": f})
 
         print("✅ [DELIVERY] Successfully sent to Telegram.")
+
+    @staticmethod
+    async def send_agent_report(final_report: dict, html_path: str) -> None:
+        """
+        Sends a Markdown summary and HTML report for agent-mode scans.
+
+        Reads TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID from the environment.
+        Silently skips delivery if either credential is missing.
+
+        Args:
+            final_report: Compiled compliance report dict from ComplianceReporter.
+            html_path:    Path to the generated HTML report file.
+
+        Returns:
+            None
+        """
+        token = os.getenv("TELEGRAM_BOT_TOKEN")
+        chat_id = os.getenv("TELEGRAM_CHAT_ID")
+
+        if not token or not chat_id:
+            print("⚠️ [DELIVERY] Telegram credentials not found in .env. Skipping alert.")
+            return
+
+        print("📡 [DELIVERY] Sending agent report to Telegram...")
+
+        summary = final_report.get("executive_summary", {})
+        compliance = final_report.get("compliance_status", {})
+        target_url = final_report.get("target_url", "unknown")
+
+        risk_level = summary.get("overall_risk_level", "UNKNOWN")
+        risk_icon = (
+            "🟢" if risk_level == "LOW"
+            else ("🟡" if risk_level == "MEDIUM" else "🔴")
+        )
+
+        total = summary.get("total_tests_executed", 0)
+        sec_fails = summary.get("security_failures", 0)
+        rel_fails = summary.get("reliability_failures", 0)
+        asr = summary.get("attack_success_rate", "0%")
+
+        def _icon(status: str) -> str:
+            return "✅" if status == "PASS" else "❌"
+
+        eu_art9 = compliance.get("EU_AI_Act_Art9_RiskManagement", "UNKNOWN")
+        eu_art12 = compliance.get("EU_AI_Act_Art12_HighRisk_PreDeploy", "UNKNOWN")
+        cisa = compliance.get("CISA_LeastPrivilege_Validation", "UNKNOWN")
+
+        text = "🐶 *BarkingDog Agent Report*\n\n"
+        text += f"🎯 *Target:* `{target_url}`\n"
+        text += f"{risk_icon} *Risk Level:* {risk_level}\n"
+        text += f"🛡️ *Security Fails:* {sec_fails}/{total} (ASR: {asr})\n"
+        text += f"⚙️ *Reliability Fails:* {rel_fails}/{total}\n"
+        text += f"\n📋 *Compliance:*\n"
+        text += f"   {_icon(eu_art9)} EU AI Act Art.9\n"
+        text += f"   {_icon(eu_art12)} EU AI Act Art.12\n"
+        text += f"   {_icon(cisa)} CISA Least Privilege\n"
+
+        api_url = f"https://api.telegram.org/bot{token}/sendMessage"
+        async with httpx.AsyncClient(trust_env=False) as client:
+            await client.post(
+                api_url,
+                json={"chat_id": chat_id, "text": text, "parse_mode": "Markdown"},
+            )
+
+        doc_url = f"https://api.telegram.org/bot{token}/sendDocument"
+        async with httpx.AsyncClient(trust_env=False) as client:
+            with open(html_path, "rb") as f:
+                await client.post(doc_url, data={"chat_id": chat_id}, files={"document": f})
+
+        print("✅ [DELIVERY] Successfully sent agent report to Telegram.")

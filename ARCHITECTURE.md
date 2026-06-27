@@ -45,6 +45,14 @@ barkingdog/
         ├── mutators.py        # Static Obfuscation (Base64, ROT13, Swapcase)
         ├── mutator_llm.py     # Dynamic Payload Generation via LLM
         └── mutator_crescendo.py # Multi-Turn Attack Sequence Generator
+        
+        
+        
+       ├── agent/                 # 🕵️ Agentic Red-Teaming Modules
+    │   ├── router.py          # Mode Routing Logic
+    │   ├── tenant_tester.py   # ASI03: Tenant Isolation Testing
+    │   ├── mcp_scanner.py     # ASI04: Tool & MCP Security
+    │   └── pair_refiner.py    # ASI05: GOAT Attacker (LLM-based)
 ```
 
 ---

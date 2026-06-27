@@ -88,3 +88,7 @@ class OpenAIProvider(BaseProvider):
         if content is None:
             raise ValueError("OpenAI returned None content")
         return content.strip()
+
+    def get_raw_client(self) -> AsyncOpenAI:
+        """Возвращает настроенный клиент для внешних модулей."""
+        return self.client
